@@ -1,4 +1,7 @@
 using Profile
+using BenchmarkTools
+using IterativeSolvers
+using SparseArrays
 
 using Langevin
 using Langevin.Geometries: Geometry
@@ -8,12 +11,14 @@ using Langevin.HolsteinModels: HolsteinModel
 using Langevin.HolsteinModels: assign_μ!, assign_ω!, assign_λ!
 using Langevin.HolsteinModels: assign_tij!, assign_ωij!, assign_λij!
 using Langevin.HolsteinModels: setup_checkerboard!
+using Langevin.HolsteinModels: mulM!, mulMᵀ!, mulMᵀM!
 using Langevin.InitializePhonons: init_phonons_single_site!
+using Langevin.Checkerboard: checkerboard_matrix, checkerboard_mul!
 
 # functions to be timed
 using Langevin.HolsteinModels: setup_checkerboard!, construct_expnΔτV!
-using Langevin.PhononAction: calc_Sbose, calc_dSbose!
-using LinearAlgebra: mul!
+using Langevin.PhononAction: calc_Sbose, calc_dSbosedϕ!
+import LinearAlgebra: mul!
 
 # number of dimensions
 ndim = 3
@@ -51,13 +56,16 @@ print('\n')
 holstein = HolsteinModel(geom,lattice,β,Δτ)
 
 # assigning phonon frequency of 1 to each site
-assign_ω!(holstein, 1.0, 0.0)
+ω = 1.0
+assign_ω!(holstein, ω, 0.0)
 
 # assigning electron-phonon couplong of 1 to each site
-assign_λ!(holstein, 1.0, 0.0)
+λ = 1.0
+assign_λ!(holstein, λ, 0.0)
 
 # assigning chemical potential for half-filling (μ=-λ²/ω²) to each site
-assign_μ!(holstein, -1.0, 0.0)
+μ = -λ^2/ω^2
+assign_μ!(holstein, μ, 0.0)
 
 # adding hopping parameters in x direction
 assign_tij!(holstein, 1.0, 0.0, 1, 1, [1,0,0])
@@ -78,24 +86,45 @@ init_phonons_single_site!(holstein)
 ## TIME DIFFERENT METHODS WHERE PERFORMANCE IS IMPORTANT ##
 ###########################################################
 
-println("Timing `construct_expnΔτV!`")
+# println("Timing `mul!`")
+# y = ones(Float64,length(holstein))
+# v = ones(Float64,length(holstein))
+# t = @benchmark mul!($y,$holstein,$v)
+# display(t)
+# print('\n')
+# print('\n')
+
+# println("Timing `construct_expnΔτV!`")
+# t = @benchmark construct_expnΔτV!($holstein)
+# display(t)
+# print('\n')
+# print('\n')
+
+# println("Timing `calc_dSbose!`")
+# dSbose = zeros(Complex{Float64},size(holstein,1))
+# t = @benchmark calc_dSbose!($dSbose, $holstein)
+# display(t)
+# print('\n')
+# print('\n')
+
+println("Timing `cg` algorithms for solving M*v=b")
+state = CGStateVariables(zeros(Float64,length(holstein)),
+                         zeros(Float64,length(holstein)),
+                         zeros(Float64,length(holstein)))
 for i in 1:10
-    @time construct_expnΔτV!(holstein)
+    b = randn(length(holstein))
+    # b = rand(-1.0:2.0:1.0,length(holstein))
+    v = zeros(Float64,length(holstein))
+    @time r = cg!(v,holstein,b,tol=1e-4,statevars=state,log=true)[2]
+    println(r)
 end
 print('\n')
 
-println("Timing `calc_dSbose!`")
-dSbose = zeros(Complex{Float64},size(holstein,1))
+println("Timing `minres` algorithms for solving M*v=b")
 for i in 1:10
-    @time calc_dSbose!(dSbose,holstein)
+    b = randn(length(holstein))
+    # b = rand(-1.0:2.0:1.0,length(holstein))
+    v = zeros(Float64,length(holstein))
+    @time r = minres!(v,holstein,b,tol=1e-4,log=true)[2]
+    println(r)
 end
-print('\n')
-
-println("Timing `mul!(y,holstein,v)`")
-y = ones(Complex{Float64},size(holstein,1))
-v = ones(Complex{Float64},size(holstein,1))
-for i in 1:10
-    @time mul!(y,holstein,v)
-end
-# @profile mul!(y,holstein,v)
-# Profile.print()
