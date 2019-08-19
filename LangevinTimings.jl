@@ -1,3 +1,6 @@
+# NOTE: For improved performence run this script from the terminal as:
+# >julia --optimize=3 --math-mode=fast --check-bounds=no LangevinTimings.jl
+
 using Profile
 using BenchmarkTools
 using IterativeSolvers
@@ -9,11 +12,12 @@ using Langevin.Lattices: Lattice
 using Langevin.QuantumLattices: view_by_site, view_by_τ
 using Langevin.HolsteinModels: HolsteinModel
 using Langevin.HolsteinModels: assign_μ!, assign_ω!, assign_λ!
-using Langevin.HolsteinModels: assign_tij!, assign_ωij!, assign_λij!
+using Langevin.HolsteinModels: assign_tij!, assign_ωij!
 using Langevin.HolsteinModels: setup_checkerboard!
 using Langevin.HolsteinModels: mulM!, mulMᵀ!, mulMᵀM!
 using Langevin.InitializePhonons: init_phonons_single_site!
 using Langevin.Checkerboard: checkerboard_matrix, checkerboard_mul!
+using Langevin.LangevinDynamics: calc_dSdϕ!
 
 # functions to be timed
 using Langevin.HolsteinModels: setup_checkerboard!, construct_expnΔτV!
@@ -38,7 +42,7 @@ bvecs = [[0.0,0.0,0.0]]
 geom = Geometry(ndim, norbits, lvecs, bvecs)
 
 # defining lattice size
-L = 10
+L = 4
 
 # constructing finite square lattice
 lattice = Lattice(geom,L)
@@ -47,7 +51,7 @@ lattice = Lattice(geom,L)
 Δτ = 0.1
 
 # setting temperature
-β = 5.0
+β = 4.0
 
 println("Constructing Holstein Model")
 print('\n')
@@ -82,30 +86,53 @@ setup_checkerboard!(holstein)
 # intialize phonon field
 init_phonons_single_site!(holstein)
 
+#################################################
+## PRE-ALLOCATING ARRAYS NEEDED FOR SIMULATION ##
+#################################################
+
+dϕdt     = zeros(Float64,          length(holstein))
+fft_dϕdt = zeros(Complex{Float64}, length(holstein))
+
+dSdϕ     = zeros(Float64,          length(holstein))
+fft_dSdϕ = zeros(Complex{Float64}, length(holstein))
+dSdϕ2    = zeros(Float64,          length(holstein))
+
+g    = zeros(Float64, length(holstein))
+Mᵀg  = zeros(Float64, length(holstein))
+M⁻¹g = zeros(Float64, length(holstein))
+
+η     = zeros(Float64,          length(holstein))
+fft_η = zeros(Complex{Float64}, length(holstein))
+
 ###########################################################
 ## TIME DIFFERENT METHODS WHERE PERFORMANCE IS IMPORTANT ##
 ###########################################################
 
-# println("Timing `mul!`")
-# y = ones(Float64,length(holstein))
-# v = ones(Float64,length(holstein))
-# t = @benchmark mul!($y,$holstein,$v)
-# display(t)
-# print('\n')
-# print('\n')
+println("Timing `mul!`")
+y = ones(Float64,length(holstein))
+v = ones(Float64,length(holstein))
+t = @benchmark mul!($y,$holstein,$v)
+display(t)
+print('\n')
+print('\n')
 
-# println("Timing `construct_expnΔτV!`")
-# t = @benchmark construct_expnΔτV!($holstein)
-# display(t)
-# print('\n')
-# print('\n')
+# println("Timing calc_dSdϕ")
+# tol = 1e-4
+# @time iters = calc_dSdϕ!(dSdϕ2, g, Mᵀg, M⁻¹g, holstein, tol)
+# println(iters)
 
-# println("Timing `calc_dSbose!`")
-# dSbose = zeros(Complex{Float64},size(holstein,1))
-# t = @benchmark calc_dSbose!($dSbose, $holstein)
-# display(t)
-# print('\n')
-# print('\n')
+println("Timing `construct_expnΔτV!`")
+t = @benchmark construct_expnΔτV!($holstein)
+display(t)
+print('\n')
+print('\n')
+
+println("Timing `calc_dSbosedϕ!`")
+dSbose = zeros(Float64,size(holstein,1))
+t = @benchmark calc_dSbosedϕ!($dSbose, $holstein)
+display(t)
+print('\n')
+print('\n')
 
 println("Timing `cg` algorithms for solving M*v=b")
 state = CGStateVariables(zeros(Float64,length(holstein)),

@@ -1,6 +1,5 @@
 # NOTE: For improved performence run this script from the terminal as:
-# >julia simple_simulation.jl --optimize=3 --math-mode=fast --check-bounds=no
-
+# >julia --optimize=3 --math-mode=fast --check-bounds=no simple_simulation.jl
 using Random
 using IterativeSolvers
 using SparseArrays
@@ -29,13 +28,17 @@ function estimate_density(holstein::HolsteinModel{T1,T2},
     
     for n in 1:ntimes
         
+        # intialize random vector
         rand!(g,-1:2:1)
+
+        # intialize M⁻¹g to zeros
+        M⁻¹g .= 0.0
 
         # getting Mᵀg
         mulMᵀ!( Mᵀg , holstein , g )
 
         # solve MᵀM⋅v=Mᵀg ==> M⁻¹g
-        minres!( M⁻¹g , holstein , Mᵀg , tol=tol)
+        cg!( M⁻¹g , holstein , Mᵀg , tol=tol, statevars=holstein.cg_state_vars , initially_zero=true)
 
         # density
         total += sum(1.0 .- g.*M⁻¹g)/length(holstein)
@@ -48,20 +51,21 @@ end
 ## DEFINING HOLSTEIN MODEL ##
 #############################
 
-# NOTE: Currently Defining Square Lattice Geometry
+# NOTE: Currently Defining Cubic Lattice Geometry
 
 # number of dimensions
-ndim = 2
+ndim = 3
 
 # number of orbitals per unit cell
 norbits = 1
 
 # lattice vectors
-lvecs = [[1.0,0.0],
-         [0.0,1.0]]
+lvecs = [[1.0,0.0,0.0],
+         [0.0,1.0,0.0],
+         [0.0,0.0,1.0]]
 
 # basis vectors
-bvecs = [[0.0,0.0]]
+bvecs = [[0.0,0.0,0.0]]
 
 # defining square lattice geometry
 geom = Geometry(ndim, norbits, lvecs, bvecs)
@@ -76,7 +80,7 @@ lattice = Lattice(geom,L)
 Δτ = 0.1
 
 # setting temperature
-β = 3.0
+β = 4.0
 
 # constructing holstein model
 holstein = HolsteinModel(geom,lattice,β,Δτ)
@@ -85,10 +89,11 @@ holstein = HolsteinModel(geom,lattice,β,Δτ)
 t = 1.0
 assign_tij!(holstein, t, 0.0, 1, 1, [1,0,0]) # x direction hopping
 assign_tij!(holstein, t, 0.0, 1, 1, [0,1,0]) # y direction hopping
+assign_tij!(holstein, t, 0.0, 1, 1, [0,0,1]) # y direction hopping
 
 # hamiltonian parameter values
 ω = 1.0
-λ = 1.0
+λ = sqrt(2.0)
 μ = -(λ/ω)^2 # for half-filling
 
 assign_ω!(holstein, ω, 0.0)
@@ -99,7 +104,9 @@ assign_μ!(holstein, μ, 0.0)
 setup_checkerboard!(holstein)
 
 # intialize phonon field
-holstein.ϕ .= -λ/ω^2
+holstein.ϕ .= -λ^2/ω^2
+# r = rand(length(holstein))
+# @. holstein.ϕ = (r-0.5)*(4.0/ω)
 
 # construct exponentiated interaction matrix
 construct_expnΔτV!(holstein)
@@ -109,20 +116,20 @@ construct_expnΔτV!(holstein)
 ####################################
 
 # langevin time step
-Δt = 2.5e-3
+Δt = 1e-3
 
 # tolerace of IterativeSolvers
 tol = 1e-4
 
 # mass for fourier acceleration: increasing the mass reduces the
 # amount of acceleration
-mass = 1.0
+mass = 0.5
 
 # number of thermalization steps
-ntherm = 10000
+ntherm = 10
 
 # number of langevin steps after thermalization
-nsteps = 50000
+nsteps = 0
 
 # frequncy with which to measure electron density
 meas_freq = 100
@@ -164,15 +171,14 @@ density_history = zeros(Float64, nmeas)
 # to store the number of IterativeSolver steps
 iters = 0
 
+@profile begin
 # first do thermalization sweeps
 for i in 1:ntherm
 
     # Runge-Kutta/Huen's Update with Fourier Acceleration.
     iters = update_rk_fa!(holstein, fa, dϕdt, fft_dϕdt, dSdϕ2, dSdϕ, fft_dSdϕ, g, Mᵀg, M⁻¹g, η, fft_η, Δt, tol)
 
-    if i%1000==0
-        println("Therm Step: ",i)
-    end
+end
 end
 
 # now do the measurement steps
@@ -186,13 +192,4 @@ for i in 1:nsteps
         density_history[div(i,meas_freq)] = estimate_density(holstein, g, Mᵀg, M⁻¹g, tol, ntimes)
     end
 
-    if i%1000==0
-        println("Meas Step: ",i)
-    end
 end
-
-##############################################################################
-## CONSTRUCTING SPARSE MATRIX M CORRESPONDING TO FINAL PHONON CONFIGURATION ##
-##############################################################################
-
-M = construct_M(holstein)
