@@ -9,7 +9,6 @@ using SparseArrays
 using Langevin
 using Langevin.Geometries: Geometry
 using Langevin.Lattices: Lattice
-using Langevin.QuantumLattices: view_by_site, view_by_τ
 using Langevin.HolsteinModels: HolsteinModel
 using Langevin.HolsteinModels: assign_μ!, assign_ω!, assign_λ!
 using Langevin.HolsteinModels: assign_tij!, assign_ωij!
@@ -21,7 +20,7 @@ using Langevin.LangevinDynamics: calc_dSdϕ!
 
 # functions to be timed
 using Langevin.HolsteinModels: setup_checkerboard!, construct_expnΔτV!
-using Langevin.PhononAction: calc_Sbose, calc_dSbosedϕ!
+using Langevin.PhononAction: calc_dSbosedϕ!
 import LinearAlgebra: mul!
 
 # number of dimensions
@@ -42,7 +41,7 @@ bvecs = [[0.0,0.0,0.0]]
 geom = Geometry(ndim, norbits, lvecs, bvecs)
 
 # defining lattice size
-L = 4
+L = 10
 
 # constructing finite square lattice
 lattice = Lattice(geom,L)
@@ -51,7 +50,7 @@ lattice = Lattice(geom,L)
 Δτ = 0.1
 
 # setting temperature
-β = 4.0
+β = 12.0
 
 println("Constructing Holstein Model")
 print('\n')
@@ -134,24 +133,35 @@ display(t)
 print('\n')
 print('\n')
 
-println("Timing `cg` algorithms for solving M*v=b")
-state = CGStateVariables(zeros(Float64,length(holstein)),
-                         zeros(Float64,length(holstein)),
-                         zeros(Float64,length(holstein)))
-for i in 1:10
-    b = randn(length(holstein))
-    # b = rand(-1.0:2.0:1.0,length(holstein))
-    v = zeros(Float64,length(holstein))
-    @time r = cg!(v,holstein,b,tol=1e-4,statevars=state,log=true)[2]
-    println(r)
-end
-print('\n')
+# println("Timing `cg` algorithms for solving M*v=b")
+# state = CGStateVariables(zeros(Float64,length(holstein)),
+#                          zeros(Float64,length(holstein)),
+#                          zeros(Float64,length(holstein)))
+# Mᵀb = zeros(Float64,length(holstein))
+# for i in 1:10
+#     b = randn(length(holstein))
+#     mulMᵀ!(Mᵀb,holstein,b)
+#     # b = rand(-1.0:2.0:1.0,length(holstein))
+#     v = zeros(Float64,length(holstein))
+#     @time r = cg!(v,holstein,Mᵀb,tol=1e-4,statevars=state,log=true)[2]
+#     println(r)
+# end
+# print('\n')
 
-println("Timing `minres` algorithms for solving M*v=b")
-for i in 1:10
-    b = randn(length(holstein))
-    # b = rand(-1.0:2.0:1.0,length(holstein))
-    v = zeros(Float64,length(holstein))
-    @time r = minres!(v,holstein,b,tol=1e-4,log=true)[2]
-    println(r)
-end
+# println("Trying `minres` for solving M*v=b")
+# b = randn(length(holstein))
+# Mᵀb = zeros(Float64,length(holstein))
+# v = zeros(Float64,length(holstein))
+# iterable = IterativeSolvers.minres_iterable!(v,holstein,Mᵀb,tol=1e-4)
+
+# for i in 1:10
+
+#     b = randn(length(holstein))
+#     mulMᵀ!(Mᵀb,holstein,b)
+#     v = zeros(Float64,length(holstein))
+
+#     @time iteration = minres!(v,holstein,Mᵀb,tol=1e-4,log=true)[2]
+
+#     println(iterations)
+# end
+# print('\n')
